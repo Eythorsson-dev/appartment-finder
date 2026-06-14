@@ -11,6 +11,10 @@ export function isCrawlRunning(): boolean {
 	return crawlRunning;
 }
 
+export function resetCrawlState(): void {
+	crawlRunning = false;
+}
+
 export function startCrawl(): void {
 	if (crawlRunning) return;
 	crawlRunning = true;
