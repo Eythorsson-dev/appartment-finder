@@ -3,26 +3,33 @@ import { getDb } from './db.js';
 
 const SEARCH_BASE = 'https://www.finn.no/realestate/lettings/search.html?location=0.20061';
 const LISTING_BASE = 'https://www.finn.no/realestate/lettings/ad.html?finnkode=';
-const DELAY_MS = 800;
+const DELAY_MS = 80;
 
 let crawlRunning = false;
+let crawlCancelled = false;
 
 export function isCrawlRunning(): boolean {
 	return crawlRunning;
 }
 
+export function cancelCrawl(): void {
+	crawlCancelled = true;
+}
+
 export function resetCrawlState(): void {
 	crawlRunning = false;
+	crawlCancelled = false;
 }
 
 export function startCrawl(): void {
 	if (crawlRunning) return;
 	crawlRunning = true;
 
+	crawlCancelled = false;
 	const db = getDb();
 	db.prepare(
 		`UPDATE crawl_status
-		 SET status = 'running', total = 0, processed = 0,
+		 SET status = 'searching', total = 0, processed = 0,
 		     started_at = CURRENT_TIMESTAMP, finished_at = NULL, error = NULL
 		 WHERE id = 1`
 	).run();
@@ -57,11 +64,12 @@ async function runCrawl(): Promise<void> {
 
 		// Phase 1: collect all finn codes from search result pages
 		const finnCodes = new Set<string>();
-		let nextUrl: string | null = SEARCH_BASE;
+		let pageNum = 1;
 
-		while (nextUrl) {
+		while (!crawlCancelled) {
+			const pageUrl = `${SEARCH_BASE}&page=${pageNum}`;
 			const page = await context.newPage();
-			await page.goto(nextUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+			await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
 
 			const codes = await page.$$eval('a[href*="finnkode="]', (els) =>
 				els
@@ -72,28 +80,27 @@ async function runCrawl(): Promise<void> {
 					.filter((c): c is string => c !== null)
 			);
 
-			codes.forEach((c) => finnCodes.add(c));
-
-			// Follow the "next page" link if present
-			const rawNext = await page
-				.$eval('a[aria-label*="neste" i], a[rel="next"], [data-testid="pagination-next"] a', (el) =>
-					el.getAttribute('href')
-				)
-				.catch(() => null);
-
 			await page.close();
 
-			if (!rawNext || codes.length === 0) {
-				nextUrl = null;
-			} else {
-				nextUrl = rawNext.startsWith('http') ? rawNext : `https://www.finn.no${rawNext}`;
-			}
+			if (codes.length === 0) break;
 
+			codes.forEach((c) => finnCodes.add(c));
+			db.prepare('UPDATE crawl_status SET processed = ? WHERE id = 1').run(pageNum);
+			pageNum++;
 			await sleep(DELAY_MS);
 		}
 
+		if (crawlCancelled) {
+			db.prepare(
+				`UPDATE crawl_status SET status = 'idle', finished_at = CURRENT_TIMESTAMP WHERE id = 1`
+			).run();
+			return;
+		}
+
 		const codesArray = Array.from(finnCodes);
-		db.prepare('UPDATE crawl_status SET total = ? WHERE id = 1').run(codesArray.length);
+		db.prepare(
+			`UPDATE crawl_status SET status = 'downloading', total = ?, processed = 0 WHERE id = 1`
+		).run(codesArray.length);
 		console.log(`Found ${codesArray.length} listings, fetching HTML…`);
 
 		// Phase 2: fetch each listing page and store HTML
@@ -101,7 +108,7 @@ async function runCrawl(): Promise<void> {
 			'INSERT OR REPLACE INTO raw_finn_appartments (id, html_document) VALUES (?, ?)'
 		);
 
-		for (let i = 0; i < codesArray.length; i++) {
+		for (let i = 0; i < codesArray.length && !crawlCancelled; i++) {
 			const finnCode = codesArray[i];
 			const page = await context.newPage();
 			try {
@@ -119,6 +126,13 @@ async function runCrawl(): Promise<void> {
 			}
 
 			await sleep(DELAY_MS);
+		}
+
+		if (crawlCancelled) {
+			db.prepare(
+				`UPDATE crawl_status SET status = 'idle', finished_at = CURRENT_TIMESTAMP WHERE id = 1`
+			).run();
+			return;
 		}
 
 		db.prepare(

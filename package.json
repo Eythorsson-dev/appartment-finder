@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@types/better-sqlite3": "^7.6.0",
-    "better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^12.11.1",
     "playwright": "^1.49.0"
   }
 }

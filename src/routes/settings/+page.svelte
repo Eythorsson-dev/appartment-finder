@@ -1,8 +1,12 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
+	import { browser } from '$app/environment';
+
+	let { data } = $props();
 
 	type CrawlStatus = {
-		status: 'idle' | 'running' | 'done' | 'error';
+		status: 'idle' | 'searching' | 'downloading' | 'done' | 'error';
 		total: number;
 		processed: number;
 		started_at: string | null;
@@ -12,10 +16,43 @@
 
 	let status = $state<CrawlStatus | null>(null);
 	let polling: ReturnType<typeof setInterval> | null = null;
+	let phaseStartedAt: number | null = null;
+	let phaseStartedProcessed: number = 0;
+	let lastPhase: string | null = null;
 
 	async function fetchStatus() {
 		const res = await fetch('/api/crawl/status');
-		status = await res.json();
+		const next: CrawlStatus = await res.json();
+
+		// Reset ETA tracking when phase changes
+		if (next.status !== lastPhase) {
+			phaseStartedAt = Date.now();
+			phaseStartedProcessed = next.processed;
+			lastPhase = next.status;
+		}
+
+		status = next;
+	}
+
+	function formatEta(secondsRemaining: number): string {
+		if (secondsRemaining < 60) return `${Math.round(secondsRemaining)}s`;
+		const m = Math.floor(secondsRemaining / 60);
+		const s = Math.round(secondsRemaining % 60);
+		return `${m}m ${s}s`;
+	}
+
+	function eta(): string | null {
+		if (!status || !phaseStartedAt) return null;
+		const elapsed = (Date.now() - phaseStartedAt) / 1000;
+		const done = status.processed - phaseStartedProcessed;
+		if (done <= 0 || elapsed < 2) return null;
+
+		if (status.status === 'downloading' && status.total > 0) {
+			const remaining = status.total - status.processed;
+			const rate = done / elapsed;
+			return formatEta(remaining / rate);
+		}
+		return null;
 	}
 
 	async function startCrawl() {
@@ -26,11 +63,15 @@
 		}
 	}
 
+	function isActive(s: CrawlStatus['status'] | undefined) {
+		return s === 'searching' || s === 'downloading';
+	}
+
 	function startPolling() {
 		if (polling) return;
 		polling = setInterval(async () => {
 			await fetchStatus();
-			if (status?.status !== 'running') stopPolling();
+			if (!isActive(status?.status)) stopPolling();
 		}, 2000);
 	}
 
@@ -38,14 +79,23 @@
 		if (polling) {
 			clearInterval(polling);
 			polling = null;
+			if (browser) invalidateAll();
 		}
 	}
 
-	onDestroy(stopPolling);
+	async function cancelCrawl() {
+		await fetch('/api/crawl', { method: 'DELETE' });
+		await fetchStatus();
+		stopPolling();
+	}
 
-	fetchStatus().then(() => {
-		if (status?.status === 'running') startPolling();
+	onMount(() => {
+		fetchStatus().then(() => {
+			if (isActive(status?.status)) startPolling();
+		});
 	});
+
+	onDestroy(stopPolling);
 </script>
 
 <main>
@@ -53,21 +103,40 @@
 
 	<section>
 		<h2>Data Collection</h2>
-		<button onclick={startCrawl} disabled={status?.status === 'running'}>
-			{status?.status === 'running' ? 'Crawling…' : 'Crawl Finn.no'}
-		</button>
+
+		<div class="summary">
+			<span><strong>{data.count}</strong> listings in database</span>
+			{#if data.last_crawled}
+				<span class="muted">Last downloaded {new Date(data.last_crawled + 'Z').toLocaleString()}</span>
+			{:else}
+				<span class="muted">Never downloaded</span>
+			{/if}
+		</div>
+
+		<div class="actions">
+			<button onclick={startCrawl} disabled={isActive(status?.status)}>
+				{isActive(status?.status) ? 'Crawling…' : 'Crawl Finn.no'}
+			</button>
+			{#if isActive(status?.status)}
+				<button class="cancel" onclick={cancelCrawl}>Cancel</button>
+			{/if}
+		</div>
 
 		{#if status && status.status !== 'idle'}
 			<div class="status">
-				{#if status.status === 'running'}
+				{#if status.status === 'searching'}
+					<p>Searching pages: <strong>{status.processed}</strong> pages found so far…</p>
+					<p class="muted">Discovering listing pages…</p>
+				{/if}
+
+				{#if status.status === 'downloading'}
 					<p>
-						Fetching listings: <strong>{status.processed}</strong> /
-						<strong>{status.total || '?'}</strong>
+						Downloading listings: <strong>{status.processed}</strong> /
+						<strong>{status.total}</strong>
 					</p>
-					{#if status.total > 0}
-						<progress value={status.processed} max={status.total}></progress>
-					{:else}
-						<p class="muted">Discovering listings…</p>
+					<progress value={status.processed} max={status.total}></progress>
+					{#if eta()}
+						<p class="muted">~{eta()} remaining</p>
 					{/if}
 				{/if}
 
@@ -102,6 +171,20 @@
 		color: #444;
 	}
 
+	.summary {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin-bottom: 1.25rem;
+		font-size: 0.95rem;
+	}
+
+	.actions {
+		display: flex;
+		gap: 0.75rem;
+		align-items: center;
+	}
+
 	button {
 		padding: 0.6rem 1.4rem;
 		font-size: 1rem;
@@ -115,6 +198,16 @@
 	button:disabled {
 		background: #999;
 		cursor: not-allowed;
+	}
+
+	button.cancel {
+		background: #fff;
+		color: #c00;
+		border: 1px solid #c00;
+	}
+
+	button.cancel:hover {
+		background: #fff0f0;
 	}
 
 	.status {
