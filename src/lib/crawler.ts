@@ -105,7 +105,8 @@ async function runCrawl(): Promise<void> {
 
 		// Phase 2: fetch each listing page and store HTML
 		const insert = db.prepare(
-			'INSERT OR REPLACE INTO raw_finn_appartments (id, html_document) VALUES (?, ?)'
+			`INSERT INTO raw_finn_appartments (id, html_document) VALUES (?, ?)
+			 ON CONFLICT(id) DO UPDATE SET html_document = excluded.html_document, crawled_at = CURRENT_TIMESTAMP`
 		);
 
 		for (let i = 0; i < codesArray.length && !crawlCancelled; i++) {
