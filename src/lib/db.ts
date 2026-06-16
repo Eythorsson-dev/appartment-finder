@@ -8,7 +8,8 @@ const SCHEMA = `
 	CREATE TABLE IF NOT EXISTS raw_finn_appartments (
 		id TEXT PRIMARY KEY,
 		html_document TEXT NOT NULL,
-		crawled_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		crawled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		deleted_at DATETIME DEFAULT NULL
 	);
 
 	CREATE TABLE IF NOT EXISTS crawl_status (
@@ -24,10 +25,21 @@ const SCHEMA = `
 	INSERT OR IGNORE INTO crawl_status (id, status) VALUES (1, 'idle');
 `;
 
+const MIGRATIONS = [
+	`ALTER TABLE raw_finn_appartments ADD COLUMN deleted_at DATETIME DEFAULT NULL`
+];
+
 export function createDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
 	mkdirSync(dirname(dbPath), { recursive: true });
 	const db = new Database(dbPath);
 	db.exec(SCHEMA);
+	for (const migration of MIGRATIONS) {
+		try {
+			db.exec(migration);
+		} catch {
+			// column already exists
+		}
+	}
 	return db;
 }
 

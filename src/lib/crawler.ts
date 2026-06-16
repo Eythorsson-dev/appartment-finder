@@ -98,6 +98,20 @@ async function runCrawl(): Promise<void> {
 		}
 
 		const codesArray = Array.from(finnCodes);
+
+		// Soft-delete listings no longer present in search results
+		const placeholders = codesArray.map(() => '?').join(',');
+		db.prepare(
+			`UPDATE raw_finn_appartments SET deleted_at = CURRENT_TIMESTAMP
+			 WHERE deleted_at IS NULL AND id NOT IN (${placeholders})`
+		).run(...codesArray);
+
+		// Restore any previously soft-deleted listings that have reappeared
+		db.prepare(
+			`UPDATE raw_finn_appartments SET deleted_at = NULL
+			 WHERE deleted_at IS NOT NULL AND id IN (${placeholders})`
+		).run(...codesArray);
+
 		db.prepare(
 			`UPDATE crawl_status SET status = 'downloading', total = ?, processed = 0 WHERE id = 1`
 		).run(codesArray.length);
