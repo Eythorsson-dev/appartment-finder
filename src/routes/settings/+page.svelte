@@ -55,6 +55,20 @@
 		return null;
 	}
 
+	let parseResult = $state<{ parsed: number } | null>(null);
+	let parsing = $state(false);
+
+	async function parseListings() {
+		parsing = true;
+		parseResult = null;
+		try {
+			const res = await fetch('/api/parse', { method: 'POST' });
+			parseResult = await res.json();
+		} finally {
+			parsing = false;
+		}
+	}
+
 	async function startCrawl() {
 		const res = await fetch('/api/crawl', { method: 'POST' });
 		if (res.status === 202) {
@@ -120,7 +134,14 @@
 			{#if isActive(status?.status)}
 				<button class="cancel" onclick={cancelCrawl}>Cancel</button>
 			{/if}
+			<button onclick={parseListings} disabled={parsing}>
+				{parsing ? 'Parsing…' : 'Parse Finn.no listings'}
+			</button>
 		</div>
+
+		{#if parseResult}
+			<p class="success">{parseResult.parsed} listings parsed.</p>
+		{/if}
 
 		{#if status && status.status !== 'idle'}
 			<div class="status">

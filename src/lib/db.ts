@@ -12,6 +12,19 @@ const SCHEMA = `
 		deleted_at DATETIME DEFAULT NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS finn_appartments (
+		id TEXT PRIMARY KEY,
+		type TEXT NOT NULL,
+		listing_url TEXT,
+		price INTEGER,
+		image_urls TEXT NOT NULL DEFAULT '[]',
+		address TEXT,
+		bedrooms INTEGER,
+		area INTEGER,
+		parsed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		deleted_at DATETIME DEFAULT NULL
+	);
+
 	CREATE TABLE IF NOT EXISTS crawl_status (
 		id INTEGER PRIMARY KEY DEFAULT 1,
 		status TEXT NOT NULL DEFAULT 'idle',
@@ -26,7 +39,9 @@ const SCHEMA = `
 `;
 
 const MIGRATIONS = [
-	`ALTER TABLE raw_finn_appartments ADD COLUMN deleted_at DATETIME DEFAULT NULL`
+	`ALTER TABLE raw_finn_appartments ADD COLUMN deleted_at DATETIME DEFAULT NULL`,
+	`ALTER TABLE finn_appartments ADD COLUMN listing_url TEXT`,
+	`ALTER TABLE finn_appartments ADD COLUMN deleted_at DATETIME DEFAULT NULL`
 ];
 
 export function createDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
