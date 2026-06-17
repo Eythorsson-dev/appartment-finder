@@ -12,13 +12,43 @@
 
 	let modal = $state<{ listing: Listing; index: number } | null>(null);
 
-	let minPrice = $state<string>(data.filters.minPrice?.toString() ?? '');
-	let maxPrice = $state<string>(data.filters.maxPrice?.toString() ?? '');
-	let reactionFilter = $state<string>(data.filters.reaction ?? '');
+	function formatPriceInput(value: string): string {
+		const n = parseInt(value.replace(/\s/g, ''), 10);
+		return isNaN(n) ? '' : n.toLocaleString('nb-NO');
+	}
+
+	function parsePriceInput(value: string): string {
+		return value.replace(/\s/g, '');
+	}
+
+	let minPrice = $state<string>(data.filters.minPrice ? formatPriceInput(String(data.filters.minPrice)) : '');
+	let maxPrice = $state<string>(data.filters.maxPrice ? formatPriceInput(String(data.filters.maxPrice)) : '');
+	let reactionFilter = $state<string[]>(data.filters.reactions ?? []);
+	let bedroomsMin = $state<string>(data.filters.bedroomsMin?.toString() ?? '');
+	let bedroomsMax = $state<string>(data.filters.bedroomsMax?.toString() ?? '');
+	let travelTimeFilters = $state<Record<number, { min: string; max: string }>>(
+		Object.fromEntries(
+			data.destinations.map((d) => [
+				d.id,
+				{
+					min: data.filters.travelTime[d.id]?.min?.toString() ?? '',
+					max: data.filters.travelTime[d.id]?.max?.toString() ?? ''
+				}
+			])
+		)
+	);
+
+	function formatDuration(seconds: number): string {
+		const m = Math.round(seconds / 60);
+		if (m < 60) return `${m} min`;
+		const h = Math.floor(m / 60);
+		const rem = m % 60;
+		return rem === 0 ? `${h}h` : `${h}h ${rem}m`;
+	}
 
 	function formatPrice(price: number | null): string {
 		if (price == null) return 'Price on request';
-		return new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'NOK', maximumFractionDigits: 0 }).format(price);
+		return price.toLocaleString('nb-NO') + ' kr';
 	}
 
 	async function setReaction(id: string, value: Reaction, e?: MouseEvent) {
@@ -34,9 +64,19 @@
 
 	function applyFilters() {
 		const params = new URLSearchParams($page.url.searchParams);
-		if (minPrice) params.set('minPrice', minPrice); else params.delete('minPrice');
-		if (maxPrice) params.set('maxPrice', maxPrice); else params.delete('maxPrice');
-		if (reactionFilter) params.set('reaction', reactionFilter); else params.delete('reaction');
+		const rawMin = parsePriceInput(minPrice);
+		const rawMax = parsePriceInput(maxPrice);
+		if (rawMin) params.set('minPrice', rawMin); else params.delete('minPrice');
+		if (rawMax) params.set('maxPrice', rawMax); else params.delete('maxPrice');
+		params.delete('reaction');
+		for (const r of reactionFilter) params.append('reaction', r);
+		if (bedroomsMin) params.set('bedroomsMin', bedroomsMin); else params.delete('bedroomsMin');
+		if (bedroomsMax) params.set('bedroomsMax', bedroomsMax); else params.delete('bedroomsMax');
+		for (const d of data.destinations) {
+			const f = travelTimeFilters[d.id];
+			if (f?.min) params.set(`tt_min_${d.id}`, f.min); else params.delete(`tt_min_${d.id}`);
+			if (f?.max) params.set(`tt_max_${d.id}`, f.max); else params.delete(`tt_max_${d.id}`);
+		}
 		goto(`?${params}`, { replaceState: true, invalidateAll: true });
 	}
 
@@ -78,23 +118,63 @@
 	</header>
 
 	<form class="filters" onsubmit={(e) => { e.preventDefault(); applyFilters(); }}>
-		<div class="filter-group">
-			<label for="minPrice">Min price</label>
-			<input id="minPrice" type="number" min="0" placeholder="0" bind:value={minPrice} />
+		<div class="filter-row">
+			<div class="filter-group">
+				<label for="minPrice">Min price</label>
+				<input
+					id="minPrice"
+					type="text"
+					inputmode="numeric"
+					placeholder="0"
+					bind:value={minPrice}
+					onfocus={() => (minPrice = parsePriceInput(minPrice))}
+					onblur={() => (minPrice = formatPriceInput(minPrice))}
+				/>
+			</div>
+			<div class="filter-group">
+				<label for="maxPrice">Max price</label>
+				<input
+					id="maxPrice"
+					type="text"
+					inputmode="numeric"
+					placeholder="Any"
+					bind:value={maxPrice}
+					onfocus={() => (maxPrice = parsePriceInput(maxPrice))}
+					onblur={() => (maxPrice = formatPriceInput(maxPrice))}
+				/>
+			</div>
+			<div class="filter-group">
+				<label>Reaction</label>
+				<div class="checkbox-group">
+					<label class="checkbox-label"><input type="checkbox" bind:group={reactionFilter} value="like" /> 👍</label>
+					<label class="checkbox-label"><input type="checkbox" bind:group={reactionFilter} value="dislike" /> 👎</label>
+					<label class="checkbox-label"><input type="checkbox" bind:group={reactionFilter} value="none" /> None</label>
+				</div>
+			</div>
+			<div class="filter-separator"></div>
+			<div class="filter-group">
+				<label>Bedrooms</label>
+				<div class="range-inputs">
+					<input type="number" min="0" placeholder="Min" bind:value={bedroomsMin} />
+					<span class="range-sep">–</span>
+					<input type="number" min="0" placeholder="Max" bind:value={bedroomsMax} />
+				</div>
+			</div>
 		</div>
-		<div class="filter-group">
-			<label for="maxPrice">Max price</label>
-			<input id="maxPrice" type="number" min="0" placeholder="Any" bind:value={maxPrice} />
-		</div>
-		<div class="filter-group">
-			<label for="reaction">Reaction</label>
-			<select id="reaction" bind:value={reactionFilter}>
-				<option value="">All</option>
-				<option value="like">👍 Liked</option>
-				<option value="dislike">👎 Disliked</option>
-				<option value="none">No reaction</option>
-			</select>
-		</div>
+		{#if data.destinations.length > 0}
+			<div class="filter-row">
+				{#each data.destinations as dest}
+					<div class="filter-group">
+						<label>🚌 {dest.name} (min)</label>
+						<div class="range-inputs">
+							<input type="number" min="0" placeholder="Min" bind:value={travelTimeFilters[dest.id].min} />
+							<span class="range-sep">–</span>
+							<input type="number" min="0" placeholder="Max" bind:value={travelTimeFilters[dest.id].max} />
+						</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
 		<button type="submit" class="apply-btn">Apply</button>
 	</form>
 
@@ -117,13 +197,20 @@
 						</div>
 						<div class="info">
 							<p class="price">{formatPrice(listing.price)}</p>
-							<p class="address">{listing.address ?? 'Unknown address'}</p>
+
 							{#if listing.bedrooms != null || listing.area != null}
 								<p class="meta">
 									{#if listing.bedrooms != null}{listing.bedrooms} bed{/if}
 									{#if listing.bedrooms != null && listing.area != null} · {/if}
 									{#if listing.area != null}{listing.area} m²{/if}
 								</p>
+							{/if}
+							{#if listing.travel_times.length > 0}
+								<div class="travel-times">
+									{#each listing.travel_times as t}
+										<p>🚌 {t.name}: {formatDuration(t.duration_seconds)}</p>
+									{/each}
+								</div>
 							{/if}
 						</div>
 					</button>
@@ -166,6 +253,20 @@
 				<div class="modal-details">
 					<p class="modal-price">{formatPrice(modal.listing.price)}</p>
 					<p class="modal-address">{modal.listing.address ?? 'Unknown address'}</p>
+					{#if modal.listing.bedrooms != null || modal.listing.area != null}
+						<p class="modal-meta">
+							{#if modal.listing.bedrooms != null}{modal.listing.bedrooms} bed{/if}
+							{#if modal.listing.bedrooms != null && modal.listing.area != null} · {/if}
+							{#if modal.listing.area != null}{modal.listing.area} m²{/if}
+						</p>
+					{/if}
+					{#if modal.listing.travel_times.length > 0}
+						<div class="modal-travel-times">
+							{#each modal.listing.travel_times as t}
+								<span class="modal-travel-time">🚌 {t.name}: {formatDuration(t.duration_seconds)}</span>
+							{/each}
+						</div>
+					{/if}
 				</div>
 				<div class="modal-actions">
 					<button
@@ -235,12 +336,18 @@
 	/* Filters */
 	.filters {
 		display: flex;
-		align-items: flex-end;
-		gap: 1rem;
+		flex-direction: column;
+		gap: 0.75rem;
 		margin-bottom: 2rem;
 		padding: 1rem 1.25rem;
 		background: #f5f7fa;
 		border-radius: 8px;
+	}
+
+	.filter-row {
+		display: flex;
+		align-items: flex-end;
+		gap: 1rem;
 		flex-wrap: wrap;
 	}
 
@@ -258,7 +365,7 @@
 		letter-spacing: 0.03em;
 	}
 
-	.filter-group input,
+	.filter-group input:not([type='checkbox']),
 	.filter-group select {
 		padding: 0.45rem 0.7rem;
 		font-size: 0.95rem;
@@ -273,6 +380,46 @@
 	.filter-group select:focus {
 		outline: none;
 		border-color: #0066cc;
+	}
+
+	.checkbox-group {
+		display: flex;
+		gap: 0.75rem;
+		align-items: center;
+		padding: 0.45rem 0;
+	}
+	.checkbox-label {
+		display: flex;
+		align-items: center;
+		gap: 0.15rem;
+		font-size: 0.95rem;
+		cursor: pointer;
+		user-select: none;
+	}
+	.checkbox-label input[type='checkbox'] {
+		margin: 0;
+	}
+
+	.filter-separator {
+		width: 1px;
+		height: 2rem;
+		background: #ddd;
+		align-self: flex-end;
+		margin-bottom: 0.45rem;
+	}
+
+	.range-inputs {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.range-inputs input {
+		width: 72px;
+		min-width: unset;
+	}
+	.range-sep {
+		color: #aaa;
+		font-size: 0.85rem;
 	}
 
 	.apply-btn {
@@ -355,6 +502,8 @@
 	.price { font-size: 1.15rem; font-weight: 700; margin: 0; color: #111; }
 	.address { font-size: 0.9rem; color: #444; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.meta { font-size: 0.8rem; color: #888; margin: 0; }
+	.travel-times { display: flex; flex-direction: column; gap: 0.1rem; }
+	.travel-times p { font-size: 0.8rem; color: #555; margin: 0; }
 
 	.reactions {
 		display: flex;
@@ -470,6 +619,9 @@
 	.modal-details { display: flex; flex-direction: column; gap: 0.1rem; }
 	.modal-price { font-size: 1.2rem; font-weight: 700; margin: 0; color: #111; }
 	.modal-address { font-size: 0.9rem; color: #555; margin: 0; }
+	.modal-meta { font-size: 0.85rem; color: #888; margin: 0; }
+	.modal-travel-times { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+	.modal-travel-time { font-size: 0.85rem; color: #555; background: #f0f4f8; padding: 0.2rem 0.55rem; border-radius: 4px; }
 
 	.modal-actions {
 		display: flex;
