@@ -36,6 +36,33 @@ const SCHEMA = `
 	);
 
 	INSERT OR IGNORE INTO crawl_status (id, status) VALUES (1, 'idle');
+
+	CREATE TABLE IF NOT EXISTS destinations (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		address TEXT NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS travel_times (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		appartment_address TEXT NOT NULL,
+		destination_id INTEGER NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
+		duration_seconds INTEGER,
+		fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(appartment_address, destination_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS travel_time_status (
+		id INTEGER PRIMARY KEY DEFAULT 1,
+		status TEXT NOT NULL DEFAULT 'idle',
+		total INTEGER DEFAULT 0,
+		processed INTEGER DEFAULT 0,
+		started_at DATETIME,
+		finished_at DATETIME,
+		error TEXT
+	);
+
+	INSERT OR IGNORE INTO travel_time_status (id, status) VALUES (1, 'idle');
 `;
 
 const MIGRATIONS = [
@@ -56,6 +83,11 @@ export function createDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
 			// column already exists
 		}
 	}
+	// Reset any in-progress status left over from a previous server process
+	db.exec(`
+		UPDATE crawl_status SET status='idle', finished_at=CURRENT_TIMESTAMP WHERE id=1 AND status IN ('searching', 'downloading');
+		UPDATE travel_time_status SET status='idle', finished_at=CURRENT_TIMESTAMP WHERE id=1 AND status='running';
+	`);
 	return db;
 }
 
