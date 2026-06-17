@@ -75,7 +75,8 @@ const MIGRATIONS = [
 	`ALTER TABLE finn_appartments ADD COLUMN listing_url TEXT`,
 	`ALTER TABLE finn_appartments ADD COLUMN deleted_at DATETIME DEFAULT NULL`,
 	`ALTER TABLE finn_appartments ADD COLUMN reaction TEXT DEFAULT NULL`,
-	`INSERT OR IGNORE INTO reactions (appartment_id, reaction) SELECT id, reaction FROM finn_appartments WHERE reaction IS NOT NULL`
+	`INSERT OR IGNORE INTO reactions (appartment_id, reaction) SELECT id, reaction FROM finn_appartments WHERE reaction IS NOT NULL`,
+	`ALTER TABLE finn_appartments DROP COLUMN reaction`
 ];
 
 export function createDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
