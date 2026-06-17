@@ -41,7 +41,8 @@ const SCHEMA = `
 const MIGRATIONS = [
 	`ALTER TABLE raw_finn_appartments ADD COLUMN deleted_at DATETIME DEFAULT NULL`,
 	`ALTER TABLE finn_appartments ADD COLUMN listing_url TEXT`,
-	`ALTER TABLE finn_appartments ADD COLUMN deleted_at DATETIME DEFAULT NULL`
+	`ALTER TABLE finn_appartments ADD COLUMN deleted_at DATETIME DEFAULT NULL`,
+	`ALTER TABLE finn_appartments ADD COLUMN reaction TEXT DEFAULT NULL`
 ];
 
 export function createDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {
