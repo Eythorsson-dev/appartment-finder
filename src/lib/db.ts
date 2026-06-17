@@ -25,6 +25,11 @@ const SCHEMA = `
 		deleted_at DATETIME DEFAULT NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS reactions (
+		appartment_id TEXT PRIMARY KEY REFERENCES finn_appartments(id) ON DELETE CASCADE,
+		reaction TEXT NOT NULL CHECK(reaction IN ('like', 'dislike'))
+	);
+
 	CREATE TABLE IF NOT EXISTS crawl_status (
 		id INTEGER PRIMARY KEY DEFAULT 1,
 		status TEXT NOT NULL DEFAULT 'idle',
@@ -69,7 +74,9 @@ const MIGRATIONS = [
 	`ALTER TABLE raw_finn_appartments ADD COLUMN deleted_at DATETIME DEFAULT NULL`,
 	`ALTER TABLE finn_appartments ADD COLUMN listing_url TEXT`,
 	`ALTER TABLE finn_appartments ADD COLUMN deleted_at DATETIME DEFAULT NULL`,
-	`ALTER TABLE finn_appartments ADD COLUMN reaction TEXT DEFAULT NULL`
+	`ALTER TABLE finn_appartments ADD COLUMN reaction TEXT DEFAULT NULL`,
+	`INSERT OR IGNORE INTO reactions (appartment_id, reaction) SELECT id, reaction FROM finn_appartments WHERE reaction IS NOT NULL`,
+	`ALTER TABLE finn_appartments DROP COLUMN reaction`
 ];
 
 export function createDb(dbPath: string = DEFAULT_DB_PATH): Database.Database {

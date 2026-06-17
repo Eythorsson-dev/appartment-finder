@@ -10,12 +10,17 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	}
 
 	const db = getDb();
-	const result = db
-		.prepare('UPDATE finn_appartments SET reaction = ? WHERE id = ? AND deleted_at IS NULL')
-		.run(reaction, params.id);
 
-	if (result.changes === 0) {
-		error(404, 'Listing not found');
+	const listing = db
+		.prepare('SELECT id FROM finn_appartments WHERE id = ? AND deleted_at IS NULL')
+		.get(params.id);
+	if (!listing) error(404, 'Listing not found');
+
+	if (reaction === null) {
+		db.prepare('DELETE FROM reactions WHERE appartment_id = ?').run(params.id);
+	} else {
+		db.prepare('INSERT OR REPLACE INTO reactions (appartment_id, reaction) VALUES (?, ?)')
+			.run(params.id, reaction);
 	}
 
 	return json({ ok: true });
