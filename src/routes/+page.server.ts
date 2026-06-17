@@ -24,26 +24,26 @@ export const load: PageServerLoad = ({ url }) => {
 		}))
 		.filter((f) => f.min || f.max);
 
-	const conditions = ['deleted_at IS NULL'];
+	const conditions = ['a.deleted_at IS NULL'];
 	const params: (number | string | null)[] = [];
 
-	if (minPrice) { conditions.push('price >= ?'); params.push(Number(minPrice)); }
-	if (maxPrice) { conditions.push('price <= ?'); params.push(Number(maxPrice)); }
+	if (minPrice) { conditions.push('a.price >= ?'); params.push(Number(minPrice)); }
+	if (maxPrice) { conditions.push('a.price <= ?'); params.push(Number(maxPrice)); }
 	if (reactions.length > 0) {
 		const clauses: string[] = [];
 		const explicit = reactions.filter((r) => r !== 'none');
 		if (explicit.length > 0) {
-			clauses.push(`reaction IN (${explicit.map(() => '?').join(', ')})`);
+			clauses.push(`r.reaction IN (${explicit.map(() => '?').join(', ')})`);
 			params.push(...explicit);
 		}
-		if (reactions.includes('none')) clauses.push('reaction IS NULL');
+		if (reactions.includes('none')) clauses.push('r.reaction IS NULL');
 		conditions.push(`(${clauses.join(' OR ')})`);
 	}
-	if (bedroomsMin) { conditions.push('bedrooms >= ?'); params.push(Number(bedroomsMin)); }
-	if (bedroomsMax) { conditions.push('bedrooms <= ?'); params.push(Number(bedroomsMax)); }
+	if (bedroomsMin) { conditions.push('a.bedrooms >= ?'); params.push(Number(bedroomsMin)); }
+	if (bedroomsMax) { conditions.push('a.bedrooms <= ?'); params.push(Number(bedroomsMax)); }
 
 	for (const f of travelTimeFilters) {
-		const inner = ['tt.appartment_address = address', 'tt.destination_id = ?'];
+		const inner = ['tt.appartment_address = a.address', 'tt.destination_id = ?'];
 		const innerParams: number[] = [f.id];
 		if (f.min) { inner.push('tt.duration_seconds >= ?'); innerParams.push(Number(f.min) * 60); }
 		if (f.max) { inner.push('tt.duration_seconds <= ?'); innerParams.push(Number(f.max) * 60); }
@@ -53,10 +53,11 @@ export const load: PageServerLoad = ({ url }) => {
 
 	const rows = db
 		.prepare(
-			`SELECT id, listing_url, price, image_urls, address, bedrooms, area, reaction
-       FROM finn_appartments
+			`SELECT a.id, a.listing_url, a.price, a.image_urls, a.address, a.bedrooms, a.area, r.reaction
+       FROM finn_appartments a
+       LEFT JOIN reactions r ON r.appartment_id = a.id
        WHERE ${conditions.join(' AND ')}
-       ORDER BY parsed_at DESC`
+       ORDER BY a.parsed_at DESC`
 		)
 		.all(...params) as {
 		id: string;
